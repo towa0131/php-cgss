@@ -1,4 +1,3 @@
 [submodule "libcgss"]
 	path = libcgss
 	url = https://github.com/hozuki/libcgss
-	ignore = untracked
