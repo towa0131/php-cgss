@@ -13,13 +13,20 @@ extern "C"{
 #include <iostream>
 
 #include "php_cgss.hpp"
+#include "acbunpack.hpp"
 #include "cgss_api.h"
+#include "CAcbFile.h"
 
 static int le_cgss;
 
 using namespace std;
 
 zend_class_entry *cgss_exception;
+
+string GetFileName(const string &s) {
+	const auto pos = s.rfind(".");
+	return s.substr(0, pos);
+}
 
 PHP_FUNCTION(hca2wav)
 {
@@ -79,6 +86,69 @@ PHP_FUNCTION(hca2wav)
 	RETURN_TRUE;
 }
 
+PHP_FUNCTION(acbunpack)
+{
+	zend_string *acbFile;
+
+	const char *filePath;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_STR(acbFile)
+	ZEND_PARSE_PARAMETERS_END();
+
+	filePath = reinterpret_cast<const char*>((unsigned char *) ZSTR_VAL(acbFile));
+
+	if (!cgssHelperFileExists(filePath)) {
+		zend_throw_exception_ex(cgss_exception, -1 TSRMLS_CC, "File %s does not exist or cannot be opened.", filePath);
+		RETURN_FALSE;
+	}
+
+	cgss::CFileStream fileStream(filePath, cgss::FileMode::OpenExisting, cgss::FileAccess::Read);
+	cgss::CAcbFile acb(&fileStream, filePath);
+
+	acb.Initialize();
+
+	const string extractDir = "_acb_" + GetFileName(filePath) + "/";
+	MakeDirectories(extractDir);
+
+	const auto &fileNames = acb.GetFileNames();
+
+	uint32_t i = 0;
+
+	for (const auto &fileName : fileNames) {
+		auto s = fileName;
+		auto isCueNonEmpty = !s.empty();
+
+		if (!isCueNonEmpty) {
+			s = CAcbFile::GetSymbolicFileNameFromCueId(i);
+		}
+
+		auto extractPath = extractDir + s;
+
+		IStream *stream;
+
+		if (isCueNonEmpty) {
+			stream = acb.OpenDataStream(s.c_str());
+		} else {
+			stream = acb.OpenDataStream(i);
+		}
+
+		if (stream) {
+			cgss::CFileStream fs(extractPath.c_str(), cgss::FileMode::Create, cgss::FileAccess::Write);
+			CopyStream(stream, &fs);
+		} else {
+			zend_throw_exception_ex(cgss_exception, -1 TSRMLS_CC, "Cue #%u (%s) cannot be retrieved.", i + 1, s.c_str());
+			RETURN_FALSE;
+		}
+
+		delete stream;
+
+		++i;
+	}
+
+	RETURN_TRUE;
+}
+
 PHP_MINIT_FUNCTION(cgss)
 {
 	REGISTER_MAIN_LONG_CONSTANT("CGSS_HCA_KEY_1", 0xF27E3B22, CONST_PERSISTENT | CONST_CS);
@@ -114,6 +184,7 @@ PHP_MINFO_FUNCTION(cgss)
 
 const zend_function_entry cgss_functions[] = {
 	PHP_FE(hca2wav,	NULL)
+	PHP_FE(acbunpack,	NULL)
 	PHP_FE_END
 };
 
