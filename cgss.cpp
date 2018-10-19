@@ -11,6 +11,7 @@ extern "C"{
 }
 
 #include <iostream>
+#include <stdlib.h>
 
 #include "php_cgss.hpp"
 #include "acbunpack.hpp"
@@ -23,9 +24,27 @@ using namespace std;
 
 zend_class_entry *cgss_exception;
 
+string GetFilePath(const string &s) {
+	const char *filePath = s.c_str();
+	char *realPath;
+
+	realPath = realpath(filePath, NULL);
+	const auto pos = string(realPath).rfind("/");
+	if(pos == string::npos){
+		return realPath;
+	}
+
+	string path = string(realPath).substr(0, pos + 1);
+
+	return path;
+}
+
 string GetFileName(const string &s) {
+	const auto dpos = s.rfind("/") + 1;
 	const auto pos = s.rfind(".");
-	return s.substr(0, pos);
+	string filename = s.substr(dpos, pos - dpos);
+
+	return filename;
 }
 
 PHP_FUNCTION(hca2wav)
@@ -103,47 +122,52 @@ PHP_FUNCTION(acbunpack)
 		RETURN_FALSE;
 	}
 
-	cgss::CFileStream fileStream(filePath, cgss::FileMode::OpenExisting, cgss::FileAccess::Read);
-	cgss::CAcbFile acb(&fileStream, filePath);
+	try {
+		cgss::CFileStream fileStream(filePath, cgss::FileMode::OpenExisting, cgss::FileAccess::Read);
+		cgss::CAcbFile acb(&fileStream, filePath);
 
-	acb.Initialize();
+		acb.Initialize();
 
-	const string extractDir = "_acb_" + GetFileName(filePath) + "/";
-	MakeDirectories(extractDir);
+		const string extractDir = GetFilePath(filePath) + "_acb_" + GetFileName(filePath) + "/";
+		MakeDirectories(extractDir);
 
-	const auto &fileNames = acb.GetFileNames();
+		const auto &fileNames = acb.GetFileNames();
 
-	uint32_t i = 0;
+		uint32_t i = 0;
 
-	for (const auto &fileName : fileNames) {
-		auto s = fileName;
-		auto isCueNonEmpty = !s.empty();
+		for (const auto &fileName : fileNames) {
+			auto s = fileName;
+			auto isCueNonEmpty = !s.empty();
 
-		if (!isCueNonEmpty) {
-			s = CAcbFile::GetSymbolicFileNameFromCueId(i);
+			if (!isCueNonEmpty) {
+				s = CAcbFile::GetSymbolicFileNameFromCueId(i);
+			}
+
+			auto extractPath = extractDir + s;
+
+			IStream *stream;
+
+			if (isCueNonEmpty) {
+				stream = acb.OpenDataStream(s.c_str());
+			} else {
+				stream = acb.OpenDataStream(i);
+			}
+
+			if (stream) {
+				cgss::CFileStream fs(extractPath.c_str(), cgss::FileMode::Create, cgss::FileAccess::Write);
+				CopyStream(stream, &fs);
+			} else {
+				zend_throw_exception_ex(cgss_exception, -1 TSRMLS_CC, "Cue #%u (%s) cannot be retrieved.", i + 1, s.c_str());
+				RETURN_FALSE;
+			}
+
+			delete stream;
+
+			++i;
 		}
-
-		auto extractPath = extractDir + s;
-
-		IStream *stream;
-
-		if (isCueNonEmpty) {
-			stream = acb.OpenDataStream(s.c_str());
-		} else {
-			stream = acb.OpenDataStream(i);
-		}
-
-		if (stream) {
-			cgss::CFileStream fs(extractPath.c_str(), cgss::FileMode::Create, cgss::FileAccess::Write);
-			CopyStream(stream, &fs);
-		} else {
-			zend_throw_exception_ex(cgss_exception, -1 TSRMLS_CC, "Cue #%u (%s) cannot be retrieved.", i + 1, s.c_str());
-			RETURN_FALSE;
-		}
-
-		delete stream;
-
-		++i;
+	} catch (const cgss::CException &ex) {
+		zend_throw_exception_ex(cgss_exception, ex.GetOpResult() TSRMLS_CC, ex.GetExceptionMessage().c_str());
+		RETURN_FALSE;
 	}
 
 	RETURN_TRUE;
