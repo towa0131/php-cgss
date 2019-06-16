@@ -14,38 +14,16 @@ extern "C"{
 #include <stdlib.h>
 
 #include "php_cgss.hpp"
-#include "acbunpack.hpp"
-#include "cgss_api.h"
+#include "cgss.hpp"
 #include "CAcbFile.h"
+#include "common.h"
 
 static int le_cgss;
 
 using namespace std;
+using namespace cgss;
 
 zend_class_entry *cgss_exception;
-
-string GetFilePath(const string &s) {
-	const char *filePath = s.c_str();
-	char *realPath;
-
-	realPath = realpath(filePath, NULL);
-	const auto pos = string(realPath).rfind("/");
-	if(pos == string::npos){
-		return realPath;
-	}
-
-	string path = string(realPath).substr(0, pos + 1);
-
-	return path;
-}
-
-string GetFileName(const string &s) {
-	const auto dpos = s.rfind("/") + 1;
-	const auto pos = s.rfind(".");
-	string filename = s.substr(dpos, pos - dpos);
-
-	return filename;
-}
 
 PHP_FUNCTION(hca2wav)
 {
@@ -71,8 +49,8 @@ PHP_FUNCTION(hca2wav)
 	cHcaFile = reinterpret_cast<const char*>((unsigned char *) ZSTR_VAL(hcaFile));
 	cWaveFile = reinterpret_cast<const char*>((unsigned char *) ZSTR_VAL(waveFile));
 
-	cgss::CHcaDecoderConfig decoderConfig;
-	decoderConfig.decodeFunc = cgss::CDefaultWaveGenerator::Decode16BitS;
+	CHcaDecoderConfig decoderConfig;
+	decoderConfig.decodeFunc = CDefaultWaveGenerator::Decode16BitS;
 	decoderConfig.waveHeaderEnabled = TRUE;
 
 	if(key1 != NULL && key2 != NULL){
@@ -84,9 +62,9 @@ PHP_FUNCTION(hca2wav)
 	}
 
 	try {
-		cgss::CFileStream fileIn(cHcaFile, cgss::FileMode::OpenExisting, cgss::FileAccess::Read),
-			fileOut(cWaveFile, cgss::FileMode::Create, cgss::FileAccess::Write);
-		cgss::CHcaDecoder hcaDecoder(&fileIn, decoderConfig);
+		CFileStream fileIn(cHcaFile, FileMode::OpenExisting, FileAccess::Read),
+			fileOut(cWaveFile, FileMode::Create, FileAccess::Write);
+		CHcaDecoder hcaDecoder(&fileIn, decoderConfig);
 
 		uint32_t read = 1;
 		static const uint32_t bufferSize = 1024;
@@ -97,13 +75,14 @@ PHP_FUNCTION(hca2wav)
 				fileOut.Write(buffer, bufferSize, 0, read);
 			}
 		}
-	} catch (const cgss::CException &ex) {
+	} catch (const CException &ex) {
 		zend_throw_exception_ex(cgss_exception, ex.GetOpResult() TSRMLS_CC, ex.GetExceptionMessage().c_str());
 		RETURN_FALSE;
 	}
 		
 	RETURN_TRUE;
 }
+
 
 PHP_FUNCTION(acbunpack)
 {
@@ -123,8 +102,8 @@ PHP_FUNCTION(acbunpack)
 	}
 
 	try {
-		cgss::CFileStream fileStream(filePath, cgss::FileMode::OpenExisting, cgss::FileAccess::Read);
-		cgss::CAcbFile acb(&fileStream, filePath);
+		CFileStream fileStream(filePath, FileMode::OpenExisting, FileAccess::Read);
+		CAcbFile acb(&fileStream, filePath);
 
 		acb.Initialize();
 
@@ -154,8 +133,8 @@ PHP_FUNCTION(acbunpack)
 			}
 
 			if (stream) {
-				cgss::CFileStream fs(extractPath.c_str(), cgss::FileMode::Create, cgss::FileAccess::Write);
-				CopyStream(stream, &fs);
+				CFileStream fs(extractPath.c_str(), FileMode::Create, FileAccess::Write);
+				common_utils::CopyStream(stream, &fs);
 			} else {
 				zend_throw_exception_ex(cgss_exception, -1 TSRMLS_CC, "Cue #%u (%s) cannot be retrieved.", i + 1, s.c_str());
 				RETURN_FALSE;
@@ -165,7 +144,7 @@ PHP_FUNCTION(acbunpack)
 
 			++i;
 		}
-	} catch (const cgss::CException &ex) {
+	} catch (const CException &ex) {
 		zend_throw_exception_ex(cgss_exception, ex.GetOpResult() TSRMLS_CC, ex.GetExceptionMessage().c_str());
 		RETURN_FALSE;
 	}

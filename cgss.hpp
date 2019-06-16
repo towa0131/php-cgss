@@ -13,8 +13,10 @@
 
 #include "cgss_api.h"
 
-using namespace cgss;
+using namespace std;
 
-void MakeDirectories(const std::string &s);
+void MakeDirectories(const string &s);
 
-void CopyStream(IStream *src, IStream *dst);
+string GetFilePath(const string &s);
+
+string GetFileName(const string &s);
