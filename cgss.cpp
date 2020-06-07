@@ -49,37 +49,40 @@ PHP_FUNCTION(hca2wav)
 	cHcaFile = reinterpret_cast<const char*>((unsigned char *) ZSTR_VAL(hcaFile));
 	cWaveFile = reinterpret_cast<const char*>((unsigned char *) ZSTR_VAL(waveFile));
 
-	CHcaDecoderConfig decoderConfig;
-	decoderConfig.decodeFunc = CDefaultWaveGenerator::Decode16BitS;
-	decoderConfig.waveHeaderEnabled = TRUE;
+	CHcaDecoderConfig config;
+	config.decodeFunc = CDefaultWaveGenerator::Decode16BitS;
+	config.waveHeaderEnabled = TRUE;
 
-	if(key1 != NULL && key2 != NULL){
-		decoderConfig.cipherConfig.keyParts.key1 = (uint32_t)key1;
-		decoderConfig.cipherConfig.keyParts.key2 = (uint32_t)key2;
+	if(key1 != NULL){
+		config.cipherConfig.keyParts.key1 = (uint32_t)key1;
 	}else{
-		decoderConfig.cipherConfig.keyParts.key1 = 0x12345678;
-		decoderConfig.cipherConfig.keyParts.key2 = 0x90abcdef;
+		config.cipherConfig.keyParts.key1 = 0x12345678;
 	}
 
-	try {
-		CFileStream fileIn(cHcaFile, FileMode::OpenExisting, FileAccess::Read),
-			fileOut(cWaveFile, FileMode::Create, FileAccess::Write);
-		CHcaDecoder hcaDecoder(&fileIn, decoderConfig);
+	if(key2 != NULL){
+		config.cipherConfig.keyParts.key2 = (uint32_t)key2;
+	}else{
+		config.cipherConfig.keyParts.key2 = 0x90abcdef;
+	}
+
+	try{
+		CFileStream fileIn(cHcaFile, FileMode::OpenExisting, FileAccess::Read), fileOut(cWaveFile, FileMode::Create, FileAccess::Write);
+		CHcaDecoder hcaDecoder(&fileIn, config);
 
 		uint32_t read = 1;
 		static const uint32_t bufferSize = 1024;
 		uint8_t buffer[bufferSize];
-		while (read > 0) {
+		while(read > 0){
 			read = hcaDecoder.Read(buffer, bufferSize, 0, bufferSize);
-			if (read > 0) {
+			if(read > 0){
 				fileOut.Write(buffer, bufferSize, 0, read);
 			}
 		}
-	} catch (const CException &ex) {
+	}catch(const CException &ex){
 		zend_throw_exception_ex(cgss_exception, ex.GetOpResult() TSRMLS_CC, ex.GetExceptionMessage().c_str());
 		RETURN_FALSE;
 	}
-		
+
 	RETURN_TRUE;
 }
 
@@ -96,12 +99,12 @@ PHP_FUNCTION(acbunpack)
 
 	filePath = reinterpret_cast<const char*>((unsigned char *) ZSTR_VAL(acbFile));
 
-	if (!cgssHelperFileExists(filePath)) {
+	if(!cgssHelperFileExists(filePath)){
 		zend_throw_exception_ex(cgss_exception, -1 TSRMLS_CC, "File %s does not exist or cannot be opened.", filePath);
 		RETURN_FALSE;
 	}
 
-	try {
+	try{
 		CFileStream fileStream(filePath, FileMode::OpenExisting, FileAccess::Read);
 		CAcbFile acb(&fileStream, filePath);
 
@@ -114,11 +117,11 @@ PHP_FUNCTION(acbunpack)
 
 		uint32_t i = 0;
 
-		for (const auto &fileName : fileNames) {
+		for(const auto &fileName : fileNames){
 			auto s = fileName;
 			auto isCueNonEmpty = !s.empty();
 
-			if (!isCueNonEmpty) {
+			if(!isCueNonEmpty){
 				s = CAcbFile::GetSymbolicFileNameFromCueId(i);
 			}
 
@@ -126,16 +129,16 @@ PHP_FUNCTION(acbunpack)
 
 			IStream *stream;
 
-			if (isCueNonEmpty) {
+			if(isCueNonEmpty){
 				stream = acb.OpenDataStream(s.c_str());
-			} else {
+			}else{
 				stream = acb.OpenDataStream(i);
 			}
 
-			if (stream) {
+			if(stream){
 				CFileStream fs(extractPath.c_str(), FileMode::Create, FileAccess::Write);
 				common_utils::CopyStream(stream, &fs);
-			} else {
+			}else{
 				zend_throw_exception_ex(cgss_exception, -1 TSRMLS_CC, "Cue #%u (%s) cannot be retrieved.", i + 1, s.c_str());
 				RETURN_FALSE;
 			}
@@ -144,7 +147,7 @@ PHP_FUNCTION(acbunpack)
 
 			++i;
 		}
-	} catch (const CException &ex) {
+	}catch (const CException &ex){
 		zend_throw_exception_ex(cgss_exception, ex.GetOpResult() TSRMLS_CC, ex.GetExceptionMessage().c_str());
 		RETURN_FALSE;
 	}
